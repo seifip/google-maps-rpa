@@ -1,4 +1,4 @@
-# Why this exists
+# Google Maps Saved place organizer
 Google Maps recently introduced a limit of 3000 saved places in the Want to go category in mobile. They still appear on desktop but make Google Maps unusable for digital nomads with a large number of pins. This script makes it possible to reorganize saved locations into smaller topic lists at scale.
 
 # How to use the script

@@ -9,4 +9,4 @@ To use the script:
 3. Copy and paste the code from the `console-script.js` file into your browser Console (`Cmd + Option + I`) and run it
 4. Keep the tab open while until the script finishes running. It may get stuck in which case just refresh the page and run it again to continue.
 
-Made by [@seifip](https://twitter.com/seifip)
+Made by [@seifip](https://twitter.com/seifip) 

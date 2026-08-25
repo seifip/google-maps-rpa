@@ -1,29 +1,57 @@
-async function waitForTextToAppear(text, elementType = 'div') {
+const TIMEOUT = 15000;
+
+// Resolves true when the text shows up, false if it never does. Without the
+// timeout a single missed transient ("Saving…" can come and go inside one
+// polling tick) leaves the script waiting forever with no output.
+async function waitForTextToAppear(text, elementType = 'div', timeout = TIMEOUT) {
   return new Promise((resolve) => {
+    const startedAt = Date.now();
     const interval = setInterval(() => {
       const element = Array.from(document.querySelectorAll(elementType))
                     .find(el => el.textContent === text);
       if (element) {
         clearInterval(interval);
-        resolve();
+        resolve(true);
         return;
+      }
+      if (Date.now() - startedAt > timeout) {
+        clearInterval(interval);
+        console.warn(`Timed out waiting for "${text}" to appear`);
+        resolve(false);
       }
     }, 100);
   });
 }
 
-async function waitForTextToDisappear(text, elementType = 'div') {
+async function waitForTextToDisappear(text, elementType = 'div', timeout = TIMEOUT) {
   return new Promise((resolve) => {
+    const startedAt = Date.now();
     const interval = setInterval(() => {
       const element = Array.from(document.querySelectorAll(elementType))
                     .find(el => el.textContent === text);
       if (!element) {
         clearInterval(interval);
-        resolve();
+        resolve(true);
         return;
+      }
+      if (Date.now() - startedAt > timeout) {
+        clearInterval(interval);
+        console.warn(`Timed out waiting for "${text}" to disappear`);
+        resolve(false);
       }
     }, 100);
   });
+}
+
+// Google Maps stops building the place panel while the tab is in the
+// background: the Save button is not hidden, it is absent from the DOM. Every
+// place then fails and the log gives no hint why, so pause instead.
+async function waitForForeground() {
+  if (!document.hidden) return;
+  console.log('Tab is in the background — paused. Switch back to Maps to resume.');
+  while (document.hidden) await delay(1000);
+  await delay(2500);
+  console.log('Resuming');
 }
 
 async function delay(ms) {
@@ -31,19 +59,34 @@ async function delay(ms) {
 }
 
 function clickSaveButton() {
-  const saveButton = document.querySelector('[data-value*="Save"]');
+  // data-value is not always present on the Save button; fall back to the
+  // accessible name before giving up.
+  const saveButton = document.querySelector('[data-value*="Save"]')
+    || Array.from(document.querySelectorAll('button,[role="button"]'))
+        .find(b => b.getClientRects().length > 0
+                && /^save$|^saved$/i.test((b.getAttribute('aria-label') || b.textContent || '').trim()));
   if (!saveButton) {
     console.log('Save button not found');
-    return;
+    return false;
   }
 
   console.log('Found save button:', saveButton);
 
   saveButton.click();
   console.log('Clicked save button');
+  return true;
+}
+
+// A list entry reads "Want to go" on its own, but can also carry its sharing
+// state and place count in the same text node ("Want to goShared·128 places"),
+// so an equality check silently finds nothing.
+function findListEntry(listName, checked) {
+  return Array.from(document.querySelectorAll(`[aria-checked="${checked}"] div`))
+    .find(el => (el.textContent || '').trim().startsWith(listName));
 }
 
 async function processRestaurant(restaurant) {
+  await waitForForeground();
   console.log('Processing restaurant:', restaurant);
 
   const button = restaurant.parentElement.parentElement.previousSibling;
@@ -84,8 +127,7 @@ async function processRestaurant(restaurant) {
   clickSaveButton();
   await delay(250);
 
-  const wantToGoElement = Array.from(document.querySelectorAll('[aria-checked="true"] div'))
-                    .find(el => el.textContent === 'Want to go');
+  const wantToGoElement = findListEntry('Want to go', 'true');
   if (wantToGoElement) {
     console.log('Found "Want to go" element:', wantToGoElement);
 
@@ -129,8 +171,7 @@ async function processRestaurant(restaurant) {
     clickSaveButton();
     await delay(250);
 
-    const targetElement = Array.from(document.querySelectorAll('[aria-checked="false"] div'))
-                      .find(el => el.textContent === targetCategory);
+    const targetElement = findListEntry(targetCategory, 'false');
     if (!targetElement) {
       console.log('Target element not found');
       return;
@@ -152,23 +193,35 @@ async function processRestaurant(restaurant) {
   await delay(250);
 }
 
+// Run stopRpa() in the console to stop after the current place.
+window.stopRpa = () => { window.__stopRpa = true; console.log('Stopping after the current place'); };
+
 async function processRestaurants() {
-  const restaurants = document.querySelectorAll('[aria-label="Add note"]');
-  console.log('Found restaurants:', restaurants.length);
+  window.__stopRpa = false;
 
-  for (const restaurant of restaurants) {
-    const isBroken = Array.from(restaurant.parentElement.parentElement.previousSibling.querySelectorAll('img'))
-    .some(img => img.src === 'https://maps.gstatic.com/tactile/pane/result-no-thumbnail-2x.png');
+  while (!window.__stopRpa) {
+    await waitForForeground();
 
-    if (isBroken) {
-      continue;
-    } else {
-      await processRestaurant(restaurant);
-      break;
+    const restaurants = document.querySelectorAll('[aria-label="Add note"]');
+    console.log('Found restaurants:', restaurants.length);
+
+    const next = Array.from(restaurants).find(restaurant => {
+      const card = restaurant.parentElement.parentElement.previousSibling;
+      if (!card) return false;
+      const isBroken = Array.from(card.querySelectorAll('img'))
+        .some(img => img.src === 'https://maps.gstatic.com/tactile/pane/result-no-thumbnail-2x.png');
+      return !isBroken;
+    });
+
+    // Previously this function called itself unconditionally, so an empty or
+    // fully-broken list recursed forever and the run never ended.
+    if (!next) {
+      console.log('Nothing left to process');
+      return;
     }
-  }
 
-  processRestaurants();
+    await processRestaurant(next);
+  }
 }
 
 processRestaurants();

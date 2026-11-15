@@ -5,8 +5,67 @@ const api = require('./console-script.js');
 const url = 'https://www.google.com/maps/place/Restaurant/data=!1s123';
 test('explicit cuisine classification only', () => {
   for (const c of ['Italian restaurant','Greek restaurant','Turkish restaurant']) assert.equal(api.classify(c),'Mediterranean');
+  for (const c of ['Italian', 'Greek', 'Turkish', 'Pizza']) assert.equal(api.classify(c), 'Mediterranean');
+  for (const c of ['Mexican', 'Taco', 'Burrito', 'Tex-Mex']) assert.equal(api.classify(c), 'Mexican');
   assert.equal(api.classify(' · Mexican restaurant '),'Mexican');
   for (const c of ['Restaurant','Mediterranean restaurant','Moroccan restaurant','Italian sounding name','constructor','__proto__']) assert.equal(api.classify(c),null);
+});
+
+// Minimal DOM doubles represent the observed saved-row structure. They implement
+// only the selectors used by scan, so the tests also exercise row discovery.
+function savedRow({tag = 'button', role, name = 'Example', category, note = '', closure = '', href} = {}) {
+  const row = {
+    tag, role, textContent: [name, category, note, closure].filter(Boolean).join(' '),
+    matches(selector) { return selector === 'a[href]' && tag === 'a' && !!href; },
+    getAttribute(name) { return name === 'href' ? href : null; },
+    querySelector(selector) {
+      if (selector === '.fontBodyMedium > div:last-child > div:last-child span:last-child') {
+        return category == null ? null : {textContent: category};
+      }
+      if (selector === 'a[href*="/maps/place/"]') return null;
+      throw new Error(`Unexpected selector: ${selector}`);
+    }
+  };
+  const heading = {
+    textContent: name,
+    closest(selector) {
+      const parts = selector.split(',').map(s => s.trim());
+      return parts.some(s => s === tag || (s === '[role="button"]' && role === 'button')) ? row : null;
+    }
+  };
+  return heading;
+}
+function scopeOf(...headings) {
+  return {querySelectorAll(selector) {
+    assert.equal(selector, '.fontHeadlineSmall');
+    return headings;
+  }};
+}
+test('scan reads native and role button rows including existing notes', () => {
+  const report = api.scan({sourceList: 'Food', scope: scopeOf(
+    savedRow({category: '· Cafe ', note: 'Existing private note'}),
+    savedRow({tag: 'div', role: 'button', name: 'Another', category: 'Bistro '})
+  )});
+  assert.equal(report.inspected, 2);
+  assert.equal(report.candidates[0].category, '· Cafe');
+  assert.equal(report.candidates[0].target, 'Coffee');
+  assert.equal(report.candidates[0].url, null);
+  assert.equal(report.candidates[0].status, 'review: identity missing');
+  assert.equal(report.candidates[1].category, 'Bistro');
+  assert.equal(report.candidates[1].target, null);
+});
+test('scan retains missing fields and blocks closure removal until Heart is verified', () => {
+  const rows = api.scan({sourceList: 'Food', scope: scopeOf(
+    savedRow({name: 'No category'}),
+    savedRow({name: 'Closed', category: 'Italian', closure: 'Permanently closed'})
+  )}).candidates;
+  assert.equal(rows[0].category, '');
+  assert.equal(rows[0].url, null);
+  assert.equal(rows[0].target, null);
+  assert.equal(rows[1].closure, 'permanent');
+  assert.equal(rows[1].heartMembership, 'unknown');
+  assert.match(rows[1].status, /^blocked:/);
+  assert.equal(api.plan([{name: 'Closed', category: 'Italian', text: 'Permanently closed', heartMembership: true}])[0].status, 'keep: Heart exception');
 });
 test('closed and unknown places retained for review', () => {
   const rows = api.plan([{name:'A',category:'Mexican restaurant',url,text:'Permanently closed',heartMembership:false}, {name:'B',category:'Restaurant',text:''}]);

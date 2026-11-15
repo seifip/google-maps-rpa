@@ -6,6 +6,8 @@
     'burrito restaurant': 'Mexican', 'tex-mex restaurant': 'Mexican',
     'italian restaurant': 'Mediterranean', 'greek restaurant': 'Mediterranean',
     'turkish restaurant': 'Mediterranean', 'pizza restaurant': 'Mediterranean',
+    'mexican': 'Mexican', 'taco': 'Mexican', 'burrito': 'Mexican', 'tex-mex': 'Mexican',
+    'italian': 'Mediterranean', 'greek': 'Mediterranean', 'turkish': 'Mediterranean', 'pizza': 'Mediterranean',
     'cafe': 'Coffee', 'coffee shop': 'Coffee', 'espresso bar': 'Coffee',
     'tea house': 'Tea', 'tea shop': 'Tea', 'tea store': 'Tea',
     'chinese tea house': 'Tea', 'bakery': 'Bakery', 'pastry shop': 'Bakery',
@@ -54,7 +56,7 @@
     // the current Maps UI. Existing-note rows are included (not just Add note).
     const headings = Array.from(scope.querySelectorAll('.fontHeadlineSmall'));
     const records = headings.slice(0, limit).map(heading => {
-      const row = heading.closest('[role="button"]') || heading.closest('a');
+      const row = heading.closest('button, [role="button"], a');
       const category = row?.querySelector('.fontBodyMedium > div:last-child > div:last-child span:last-child');
       const anchor = row?.matches('a[href]') ? row : row?.querySelector('a[href*="/maps/place/"]');
       return { name: heading.textContent.trim(), category: category?.textContent.trim() || '',

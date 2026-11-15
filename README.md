@@ -18,7 +18,7 @@ copy(JSON.stringify(report, null, 2));
 
 The scan stops after 1,000 loaded headings by default (configurable limit 1–5,000). `truncated` describes that local limit, NOT whether Google loaded the whole list. Maps may virtualize rows. Scroll and repeat as needed. Keep exports private: they contain saved names and URLs.
 
-Mexican, taco, burrito and Tex-Mex categories suggest Mexican. Italian, Greek, Turkish and pizza categories suggest Mediterranean. Coffee, tea, bakery and dessert mappings remain. Suggestions require review. Generic restaurants, broad Mediterranean labels and unmapped categories are never guessed or defaulted to Food.
+Mexican, taco, burrito and Tex-Mex categories suggest Mexican. Italian, Greek, Turkish and pizza categories suggest Mediterranean. Both the short labels and their explicit restaurant forms are recognized. Coffee, tea, bakery and dessert mappings remain. Suggestions require review. Generic restaurants, broad Mediterranean labels and unmapped categories are never guessed or defaulted to Food.
 
 ## Move safely after review
 
@@ -34,12 +34,12 @@ If anything is uncertain, leave the source untouched and reconcile before retryi
 
 ## Limits
 
-- English categories and best-effort DOM selectors. Blank category or URL means review, not permission to guess.
+- English categories and best-effort DOM selectors. A read-only check of the previous version found native button rows and confirmed the category selector within them; the updated row selector still needs live validation. Blank category or URL means review, not permission to guess.
 - Includes loaded headings with existing notes, not just Add note rows.
-- No automatic scrolling, full-list export, cuisine lookup or completeness claim.
+- Only currently loaded rows are scanned; lazy loading and virtualization can omit places. No automatic scrolling, full-list export, cuisine lookup or completeness claim.
 - Exact URL deduplication only where a URL includes a Maps identity/data field. Names never deduplicate branches. Missing identities remain separate.
 - Place links currently accept HTTPS google.com hosts only. Country-domain links remain unidentified.
-- No live Maps integration test has been performed. Validate a few rows against current UI before trusting a large report.
+- No live integration test of this updated scanner has been performed. Validate a few rows against current UI before trusting a large report.
 - Assistant integrations must use documented DOM-reading APIs. This repo does not authorize arbitrary script injection in a managed browser. Port the read-only logic to supported APIs or use UI snapshots.
 
 ## Tests

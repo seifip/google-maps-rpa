@@ -1,174 +1,72 @@
-async function waitForTextToAppear(text, elementType = 'div') {
-  return new Promise((resolve) => {
-    const interval = setInterval(() => {
-      const element = Array.from(document.querySelectorAll(elementType))
-                    .find(el => el.textContent === text);
-      if (element) {
-        clearInterval(interval);
-        resolve();
-        return;
-      }
-    }, 100);
+/* Google Maps saved-place first pass. No clicks, requests, timers or list edits. */
+(function (root) {
+  'use strict';
+  const categories = Object.freeze({
+    'mexican restaurant': 'Mexican', 'taco restaurant': 'Mexican',
+    'burrito restaurant': 'Mexican', 'tex-mex restaurant': 'Mexican',
+    'italian restaurant': 'Mediterranean', 'greek restaurant': 'Mediterranean',
+    'turkish restaurant': 'Mediterranean', 'pizza restaurant': 'Mediterranean',
+    'cafe': 'Coffee', 'coffee shop': 'Coffee', 'espresso bar': 'Coffee',
+    'tea house': 'Tea', 'tea shop': 'Tea', 'tea store': 'Tea',
+    'chinese tea house': 'Tea', 'bakery': 'Bakery', 'pastry shop': 'Bakery',
+    'dessert shop': 'Dessert', 'dessert restaurant': 'Dessert',
+    'japanese sweets restaurant': 'Dessert'
   });
-}
-
-async function waitForTextToDisappear(text, elementType = 'div') {
-  return new Promise((resolve) => {
-    const interval = setInterval(() => {
-      const element = Array.from(document.querySelectorAll(elementType))
-                    .find(el => el.textContent === text);
-      if (!element) {
-        clearInterval(interval);
-        resolve();
-        return;
-      }
-    }, 100);
-  });
-}
-
-async function delay(ms) {
-  await new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function clickSaveButton() {
-  const saveButton = document.querySelector('[data-value*="Save"]');
-  if (!saveButton) {
-    console.log('Save button not found');
-    return;
+  const clean = value => String(value || '').trim().replace(/^·\s*/, '').toLowerCase();
+  function classify(category) {
+    // No fallback to Food, name guessing, or broad Mediterranean/ME inference.
+    return Object.hasOwn(categories, clean(category)) ? categories[clean(category)] : null;
   }
-
-  console.log('Found save button:', saveButton);
-
-  saveButton.click();
-  console.log('Clicked save button');
-}
-
-async function processRestaurant(restaurant) {
-  console.log('Processing restaurant:', restaurant);
-
-  const button = restaurant.parentElement.parentElement.previousSibling;
-  if (!button) {
-    console.log('Button not found');
-    return;
+  function placeURL(value) {
+    try {
+      const u = new URL(value, 'https://www.google.com');
+      if (!['www.google.com', 'maps.google.com', 'google.com'].includes(u.hostname) || !u.pathname.startsWith('/maps/place/')) return null;
+      if (u.protocol !== 'https:') return null;
+      u.hash = '';
+      return u.href;
+    } catch { return null; }
   }
-
-  console.log('Found button:', button);
-
-  const categorySpan = button.querySelector('.fontBodyMedium > div:last-child > div:last-child span:last-child');
-  if (!categorySpan) {
-    console.log('Category span not found');
-    return;
+  function plan(records) {
+    const seen = new Set();
+    return records.flatMap(record => {
+      const url = placeURL(record.url);
+      // Only deduplicate by exact place URL, NEVER by restaurant name.
+      const identity = url && (/data=/.test(url) || /[?&](?:query_place_id|cid)=/.test(url)) ? url : null;
+      if (identity && seen.has(identity)) return [];
+      if (identity) seen.add(identity);
+      const text = record.text || '';
+      const permanent = /\bpermanently closed\b/i.test(text);
+      const temporary = /\btemporarily closed\b/i.test(text);
+      const closure = permanent && temporary ? 'conflicting' : permanent ? 'permanent' : temporary ? 'temporary' : null;
+      // List-row DOM does not prove absence from Heart/Favorites. Default unknown.
+      const heartMembership = record.heartMembership === true ? 'yes' : record.heartMembership === false ? 'no' : 'unknown';
+      const target = closure ? null : classify(record.category);
+      return [{ name: record.name, category: record.category, url,
+        target, closure, heartMembership, status: closure === 'permanent' ? (heartMembership === 'yes' ? 'keep: Heart exception' : heartMembership === 'unknown' ? 'blocked: verify Heart membership before removal' : 'removal candidate: verify permanent closure, exact pin and preserve notes') : closure ? 'review closure: leave saved' : !url ? 'review: identity missing' : target ? 'candidate: verify pin and notes' : 'review: unmapped category' }];
+    });
   }
-
-  console.log('Found category span:', categorySpan);
-
-  const restaurantNameElement = button.querySelector('.fontHeadlineSmall');
-  if (!restaurantNameElement) {
-    console.log('Restaurant name element not found');
-    return;
-  }
-
-  console.log('Found restaurant name element:', restaurantNameElement);
-
-  button.click();
-  console.log('Clicked button');
-  await delay(250);
-
-  const restaurantName = restaurantNameElement.textContent;
-  console.log('Restaurant name:', restaurantName);
-
-  await waitForTextToAppear(restaurantName, 'h1');
-  console.log('H1 element found');
-  await delay(250);
-
-  clickSaveButton();
-  await delay(250);
-
-  const wantToGoElement = Array.from(document.querySelectorAll('[aria-checked="true"] div'))
-                    .find(el => el.textContent === 'Want to go');
-  if (wantToGoElement) {
-    console.log('Found "Want to go" element:', wantToGoElement);
-
-    wantToGoElement.parentElement.click();
-    console.log('Clicked "Want to go" element');
-    await delay(250);
-
-    await waitForTextToAppear('Removing…');
-    console.log('Removing…');
-    await delay(250);
-
-    await waitForTextToDisappear('Removing…');
-    console.log('Removed from Want to go');
-    await delay(250);
-  }
-
-  const category = categorySpan.textContent.trim().replace('· ', '');
-  console.log('Category:', category);
-
-  const targetCategories = {
-    'Cafe': 'Coffee',
-    'Coffee shop': 'Coffee', 
-    'Coffee': 'Coffee',
-    'Espresso bar': 'Coffee',
-    'Tea house': 'Tea',
-    'Tea shop': 'Tea',
-    'Tea store': 'Tea',
-    'Chinese tea house': 'Tea',
-    'Bakery': 'Bakery',
-    'Pastry shop': 'Bakery',
-    'Dessert': 'Dessert',
-    'Dessert shop': 'Dessert',
-    'Dessert restaurant': 'Dessert',
-    'Japanese sweets restaurant': 'Dessert',
-  };
-
-  const targetCategory = targetCategories[category] || 'Food';
-  console.log('Target category:', targetCategory);
-
-  if(!category.includes('closed')) {
-    clickSaveButton();
-    await delay(250);
-
-    const targetElement = Array.from(document.querySelectorAll('[aria-checked="false"] div'))
-                      .find(el => el.textContent === targetCategory);
-    if (!targetElement) {
-      console.log('Target element not found');
-      return;
+  function scan({ scope, sourceList, limit = 1000 } = {}) {
+    if (!scope || typeof scope.querySelectorAll !== 'function' || !sourceList?.trim()) {
+      throw new Error('Choose the saved-list DOM container and explicitly name sourceList. Nothing changed.');
     }
-
-    console.log('Found target element:', targetElement);
-
-    targetElement.parentElement.click();
-    console.log(`Clicked ${targetCategory}`);
-    await delay(250);
-
-    await waitForTextToAppear('Saving…');
-    console.log('Saving…');
-    await delay(250);
-
-    await waitForTextToDisappear('Saving…');
-    console.log(`Saved to ${targetCategory}`);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw new Error('limit must be 1..5000');
+    // Read loaded rows only. Selectors are best-effort and must be checked against
+    // the current Maps UI. Existing-note rows are included (not just Add note).
+    const headings = Array.from(scope.querySelectorAll('.fontHeadlineSmall'));
+    const records = headings.slice(0, limit).map(heading => {
+      const row = heading.closest('[role="button"]') || heading.closest('a');
+      const category = row?.querySelector('.fontBodyMedium > div:last-child > div:last-child span:last-child');
+      const anchor = row?.matches('a[href]') ? row : row?.querySelector('a[href*="/maps/place/"]');
+      return { name: heading.textContent.trim(), category: category?.textContent.trim() || '',
+        url: anchor?.getAttribute('href'), text: row?.textContent || heading.textContent };
+    });
+    return { sourceList, readOnly: true, coverage: 'loaded DOM only; not a complete list export',
+      inspected: records.length, truncated: headings.length > limit, candidates: plan(records) };
   }
-  await delay(250);
-}
-
-async function processRestaurants() {
-  const restaurants = document.querySelectorAll('[aria-label="Add note"]');
-  console.log('Found restaurants:', restaurants.length);
-
-  for (const restaurant of restaurants) {
-    const isBroken = Array.from(restaurant.parentElement.parentElement.previousSibling.querySelectorAll('img'))
-    .some(img => img.src === 'https://maps.gstatic.com/tactile/pane/result-no-thumbnail-2x.png');
-
-    if (isBroken) {
-      continue;
-    } else {
-      await processRestaurant(restaurant);
-      break;
-    }
+  const api = Object.freeze({ classify, placeURL, plan, scan });
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else {
+    root.mapsSavedFirstPass = api;
+    console.info('Read-only helper ready: mapsSavedFirstPass.scan({scope, sourceList}). No saved places changed.');
   }
-
-  processRestaurants();
-}
-
-processRestaurants();
+})(globalThis);
